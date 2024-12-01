@@ -1,5 +1,5 @@
 # TP Avancé : "Mission Ultime : Sauvegarde et Sécurisation"
-### Étape 1 : Analyse et nettoyage du serveur
+# Étape 1 : Analyse et nettoyage du serveur
 ```
 [root@localhost ~]# cat /etc/passwd
 root:x:0:0:root:/root:/bin/bash
@@ -59,7 +59,7 @@ tcp        LISTEN      0           128                            0.0.0.0:22    
 tcp        ESTAB       0           0                       192.168.56.101:22                192.168.56.1:39902       users:(("sshd",pid=1754,fd=4),("sshd",pid=1750,fd=4))                                                              
 tcp        LISTEN      0           128                               [::]:22                        [::]:*           users:(("sshd",pid=902,fd=4))    
 ```
-### Étape 2 : Configuration avancée de LVM
+# Étape 2 : Configuration avancée de LVM
 ```
 [root@localhost tmp]# sudo lvcreate --snapshot --name mylv_snapshot --size 500M /dev/vg_secure/secure_data 
   Logical volume "mylv_snapshot" created.
@@ -88,7 +88,7 @@ lost+found  sensitive1.txt  sensitive2.txt
   Rounding size to boundary between physical extents: 4.00 MiB.
   Snapshot origin volumes can be resized only while inactive: try lvchange -an.
 ```
-### Étape 3 : Automatisation avec un script de sauvegarde
+# Étape 3 : Automatisation avec un script de sauvegarde
 ```
 #!/bin/bash
 
@@ -97,6 +97,7 @@ SOURCE_DIR="/mnt/secure_data"
 BACKUP_DIR="/backup"
 DATE=$(date +"%Y%m%d")
 BACKUP_FILE="${BACKUP_DIR}/secure_data_${DATE}.tar.gz"
+RETENTION_DAYS=7  # Nombre de jours à conserver les sauvegardes
 
 # Exclusion des fichiers .tmp, .log et fichiers cachés
 EXCLUDE_PATTERN="--exclude=*.tmp --exclude=*.log --exclude=.*"
@@ -125,6 +126,98 @@ else
     exit 2
 fi
 
-# Appeler la fonction de rotation des sauvegardes  
-rotate_backups 
+# Rotation des sauvegardes
+rotate_backups() {
+    echo "Rotation des sauvegardes : suppression des fichiers de plus de ${RETENTION_DAYS} jours..."
+    find "$BACKUP_DIR" -type f -name "secure_data_*.tar.gz" -mtime +${RETENTION_DAYS} -exec rm -f {} \;
+    echo "Rotation terminée."
+}
+
+rotate_backups
 ```
+```
+[root@localhost ~]# /root/secure_backup.sh
+Création de la sauvegarde dans /backup/secure_data_20241130.tar.gz...
+Sauvegarde réussie : /backup/secure_data_20241130.tar.gz
+Rotation des sauvegardes : suppression des fichiers de plus de 7 jours...
+Rotation terminée.
+```
+```
+[root@localhost ~]# sudo crontab -e
+
+0 3 * * * /root/secure_backup.sh
+
+crontab: installing new crontab
+```
+# Étape 4 : Surveillance avancée avec auditd
+```
+[root@localhost ~]#  sudo auditctl -a always,exit -F arch=b64 -S open,openat,creat,unlink,rename -F dir=/etc -F perm=wa -k etc_changes
+[root@localhost ~]# sudo cat /etc/audit/rules.d/audit.rules
+## First rule - delete all
+-D
+
+## Increase the buffers to survive stress events.
+## Make this bigger for busy systems
+-b 8192
+
+## This determine how long to wait in burst of events
+--backlog_wait_time 60000
+
+## Set failure mode to syslog
+-f 1
+```
+```
+[root@localhost ~]# sudo touch /etc/test_audit
+[root@localhost ~]# echo "Test auditd" | sudo tee -a /etc/test_audit
+Test auditd
+[root@localhost ~]# sudo rm /etc/test_audit
+[root@localhost ~]# sudo ausearch -k etc_changes | grep etc_changes
+type=CONFIG_CHANGE msg=audit(1732469431.730:216): auid=0 ses=3 subj=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023 op=add_rule key="etc_changes" list=4 res=1
+type=SYSCALL msg=audit(1732469448.887:224): arch=c000003e syscall=257 success=yes exit=13 a0=ffffff9c a1=7f8c523a45a0 a2=80241 a3=1b6 items=2 ppid=1 pid=796 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm="firewalld" exe="/usr/bin/python3.9" subj=system_u:system_r:firewalld_t:s0 key="etc_changes"
+type=SYSCALL msg=audit(1732469448.892:225): arch=c000003e syscall=188 success=yes exit=0 a0=7f8c523a45a0 a1=7f8c5245dbd0 a2=7f8c523a4550 a3=28 items=1 ppid=1 pid=796 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm="firewalld" exe="/usr/bin/python3.9" subj=system_u:system_r:firewalld_t:s0 key="etc_changes"
+```
+```
+[root@localhost ~]# sudo ausearch -k etc_changes > /var/log/audit_etc.log
+
+```
+# Étape 5 : Sécurisation avec Firewalld
+```
+[root@localhost ~]# sudo firewall-cmd --permanent --add-service=ssh
+Warning: ALREADY_ENABLED: ssh
+success
+[root@localhost ~]# sudo firewall-cmd --permanent --add-service=http
+success
+[root@localhost ~]# sudo firewall-cmd --permanent --add-service=https
+Warning: ALREADY_ENABLED: https
+success
+[root@localhost ~]# sudo firewall-cmd --list-all
+public (active)
+  target: default
+  icmp-block-inversion: no
+  interfaces: enp0s3 enp0s8
+  sources: 
+  services: cockpit dhcpv6-client https ssh
+  ports: 2222/tcp
+  protocols: 
+  forward: yes
+  masquerade: no
+  forward-ports: 
+  source-ports: 
+  icmp-blocks: 
+  rich rules: 
+[root@localhost ~]# sudo firewall-cmd --permanent --remove-service=cockpit
+success
+[root@localhost ~]#  sudo firewall-cmd --permanent --remove-service=dhcpv6-client
+success
+
+```
+```
+[root@localhost ~]# sudo firewall-cmd --permanent --add-rich-rule="rule family='ipv4' source address='192.168.1.0/24' service name='ssh' accept"
+success
+[root@localhost ~]# sudo firewall-cmd --reload
+success
+[root@localhost ~]# sudo firewall-cmd --list-rich-rules
+rule family="ipv4" source address="192.168.1.0/24" service name="ssh" accept
+```
+```
+
