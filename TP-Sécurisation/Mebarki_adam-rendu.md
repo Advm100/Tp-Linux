@@ -207,5 +207,20 @@ Plus il y a de services disponibles sur un serveur plus il y a de faille, pour p
 sudo systemctl list-units --type=service
 sudo systemctl disable nom_du_service
 ```
+## Configuration fail2ban (anti force brute)
+```
+sudo apt install fail2ban -y
+sudo systemctl enable fail2ban
+sudo systemctl start fail2ban
+```
+## Configurer un certificat SSL avec HTTPS (convertion des connexions HTTP en HTTPS )
 
 
+## Mettre en place un IDS (Intrusion Detection System(analyse trafic réseau))
+```
+sudo apt install aide -y
+sudo aideinit
+sudo cp /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+
+sudo aide --check
+```
